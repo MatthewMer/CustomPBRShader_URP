@@ -1,9 +1,9 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
-#ifdef _ATTRIBUTES
+#if defined(_ATTRIBUTES)
 struct Attributes {
     float4 positionOS	: POSITION;
-#ifdef _NORMALMAP
+#if defined(_NORMALMAP)
 	float4 tangentOS 	: TANGENT;
 #endif
     float4 normalOS		: NORMAL;
@@ -13,7 +13,7 @@ struct Attributes {
 };
 #endif
 
-#ifdef _VARYINGS
+#if defined(_VARYINGS)
 struct Varyings
 {
     float4 positionCS 					: SV_POSITION;
@@ -21,35 +21,31 @@ struct Varyings
 	DECLARE_LIGHTMAP_OR_SH(lightmapUV, vertexSH, 1);
 	float3 positionWS					: TEXCOORD2;
 
-#ifdef _NORMALMAP
-	half3 normalWS					: TEXCOORD3;
-	half3 tangentWS					: TEXCOORD4;
-	half3 bitangentWS				: TEXCOORD5;
+#if defined(_NORMALMAP)
+	float4 normalWS					: TEXCOORD3;    // store viewDir in w component
+	float4 tangentWS			    : TEXCOORD4;
+	float4 bitangentWS				: TEXCOORD5;
 #else
-	half3 normalWS					: TEXCOORD3;
+	float3 normalWS					: TEXCOORD3;
 #endif
 				
-#ifdef _ADDITIONAL_LIGHTS_VERTEX
-	half4 fogFactorAndVertexLight	: TEXCOORD6; // x: fogFactor, yzw: vertex light
+#if defined(_ADDITIONAL_LIGHTS_VERTEX)
+	float4 fogFactorAndVertexLight	: TEXCOORD6; // x: fogFactor, yzw: vertex light
 #else
-	half  fogFactor					: TEXCOORD6;
+	float  fogFactor					: TEXCOORD6;
 #endif
 
 #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
 	float4 shadowCoord 				: TEXCOORD7;
 #endif
 
-    half3 viewDir                   : TEXCOORD8;
 	float4 color						: COLOR;
 };
 #endif
 
 struct SamplesPBR
 {
-    float3 albedo;
-#if defined(_ALPHATEST_ON) || defined(_SURFACE_TYPE_TRANSPARENT)
-    float alpha;
-#endif
+    float4 albedoAlpha;
 #if defined(_NORMALMAP)
     float3 normalTS;
 #endif
@@ -59,8 +55,6 @@ struct SamplesPBR
 #else
     float metallic;
 #endif
-#endif
-#if !defined(_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A)
     float roughness;
 #endif
 #if defined(_OCCLUSIONMAP)

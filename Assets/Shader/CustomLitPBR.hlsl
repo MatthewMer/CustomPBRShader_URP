@@ -1,3 +1,12 @@
+CBUFFER_START(MaterialParameters)
+float _NormalStrength;
+float _EmissionStrength;
+float _OcclusionStrength;
+float _MetallicMultiplier;
+float _SmoothnessMultiplier;
+CBUFFER_END
+
+
 void InitializeInputData(Varyings IN, half3 normalTS, out InputData inputData)
 {
     inputData = (InputData) 0;
@@ -5,16 +14,18 @@ void InitializeInputData(Varyings IN, half3 normalTS, out InputData inputData)
     inputData.positionWS = IN.positionWS;
 
 #ifdef _NORMALMAP
+    half3 viewDirWS = half3(IN.normalWS.w, IN.tangentWS.w, IN.bitangentWS.w);
     // transform normal from tangentspace to world normal
     half3x3 TBN = half3x3(IN.tangentWS.xyz, IN.bitangentWS.xyz, IN.normalWS.xyz);
 	inputData.normalWS = TransformTangentToWorld(normalTS, TBN);
 #else
-    inputData.normalWS = IN.normalWS;
+    half3 viewDirWS = GetWorldSpaceViewDir(IN.positionWS);
+    inputData.normalWS = IN.normalWS.xyz;
 #endif
 
     inputData.normalWS = NormalizeNormalPerPixel(inputData.normalWS);
 
-    half3 viewDirWS = SafeNormalize(IN.viewDir);
+    viewDirWS = SafeNormalize(viewDirWS);
     inputData.viewDirectionWS = viewDirWS;
 
 #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
@@ -31,7 +42,7 @@ void InitializeInputData(Varyings IN, half3 normalTS, out InputData inputData)
 	inputData.vertexLighting = IN.fogFactorAndVertexLight.yzw;
 #else
     inputData.fogCoord = IN.fogFactor;
-    inputData.vertexLighting = half3(0, 0, 0);
+    inputData.vertexLighting = float3(0, 0, 0);
 #endif
 
 /* in v11/v12?, could use :
@@ -44,7 +55,7 @@ void InitializeInputData(Varyings IN, half3 normalTS, out InputData inputData)
 #endif
 */
 
-    inputData.bakedGI = SAMPLE_GI(IN.lightmapUV, IN.vertexSH, inputData.normalWS);
+    inputData.bakedGI = SAMPLE_GI(IN.lightmapUV, IN.vertexSH, inputData.normalWS.xyz);
     inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(IN.positionCS);
     inputData.shadowMask = SAMPLE_SHADOWMASK(IN.lightmapUV);
 }
@@ -56,44 +67,48 @@ void InitializeSurfaceData(Varyings IN, out SurfaceData surfaceData)
     SamplesPBR samples;
     SampleTextures(IN, samples);
     
-    surfaceData.albedo = samples.albedo.xyz * IN.color.rgb;
+    surfaceData.albedo = samples.albedoAlpha.xyz * IN.color.rgb;
     
 #if defined(_ALPHATEST_ON) || defined(_SURFACE_TYPE_TRANSPARENT)
-    surfaceData.alpha = samples.albedo.w;
+    surfaceData.alpha = samples.albedoAlpha.w;
 #else
     surfaceData.alpha = 1.0;
 #endif
     
 #ifdef _NORMALMAP
-    surfaceData.normalTS = samples.normalTS;
+    surfaceData.normalTS = normalize(lerp(float3(0, 0, 1), samples.normalTS, _NormalStrength));
 #else
     surfaceData.normalTS = float3(0, 0, 1);
 #endif
     
 #if defined(_EMISSION)
-    surfaceData.emission = samples.emission;
-#endif
-    
-#if defined(_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A)
-    surfaceData.smoothness = samples.albedo.w;
-#elif defined(_METALLICSPECGLOSSMAP)
-    surfaceData.smoothness = 1.0 - samples.roughness;
-#else
-    surfaceData.smoothness = 0.5;
+    surfaceData.emission = samples.emission * _EmissionStrength;
 #endif
 
-#ifdef _OCCLUSIONMAP
-    surfaceData.occlusion = samples.occlusion;
+#if defined(_OCCLUSIONMAP)
+    surfaceData.occlusion = lerp(1.0, samples.occlusion, _OcclusionStrength);
 #else
     surfaceData.occlusion = 1.0;
 #endif
 
-#if _SPECULAR_SETUP
-	surfaceData.metallic = 1.0h;
-	surfaceData.specular = samples.specular.rgb;
+#if defined(_SPECULAR_SETUP)
+    surfaceData.metallic = 1.0h;
+    surfaceData.specular = samples.specular.rgb;
 #else
-    surfaceData.metallic = samples.metallic;
-    surfaceData.specular = (half3)0;
+#if defined(_METALLICSPECGLOSSMAP)
+    surfaceData.metallic = samples.metallic * _MetallicMultiplier;
+#else
+    surfaceData.metallic = 0.0h;
+#endif
+    surfaceData.specular = (half3) 0;
+#endif
+
+#if defined(_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A)
+    surfaceData.smoothness = samples.albedoAlpha.w * _SmoothnessMultiplier;
+#elif defined(_METALLICSPECGLOSSMAP)
+    surfaceData.smoothness = (1.0 - samples.roughness) * _SmoothnessMultiplier;
+#else
+    surfaceData.smoothness = 0.5;
 #endif
 }
 
@@ -115,12 +130,10 @@ Varyings InitializeVaryings(Attributes IN)
     half3 vertexLight = VertexLighting(positionInputs.positionWS, normalInputs.normalWS);
     half fogFactor = ComputeFogFactor(positionInputs.positionCS.z);
     
-    OUT.viewDir = viewDirWS;
-    
 #ifdef _NORMALMAP
-	OUT.normalWS = normalInputs.normalWS;
-	OUT.tangentWS = normalInputs.tangentWS;
-	OUT.bitangentWS = normalInputs.bitangentWS;
+	OUT.normalWS = float4(normalInputs.normalWS, viewDirWS.x);
+	OUT.tangentWS = float4(normalInputs.tangentWS, viewDirWS.y);
+	OUT.bitangentWS = float4(normalInputs.bitangentWS, viewDirWS.z);
 #else
     OUT.normalWS = NormalizeNormalPerVertex(normalInputs.normalWS);
 #endif
