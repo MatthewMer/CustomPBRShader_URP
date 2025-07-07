@@ -10,6 +10,10 @@ struct Attributes {
     float2 uv		    : TEXCOORD0;
     float2 lightmapUV	: TEXCOORD1;
     float4 color		: COLOR;
+
+#if defined(UNITY_INSTANCING_ENABLED)
+    uint instanceID                 : TEXCOORD2;
+#endif
 };
 #endif
 
@@ -27,6 +31,7 @@ struct Varyings
 	float4 bitangentWS				: TEXCOORD5;
 #else
 	float3 normalWS					: TEXCOORD3;
+    float3 viewDirWS                : TEXCOORD4;
 #endif
 				
 #if defined(_ADDITIONAL_LIGHTS_VERTEX)
@@ -40,6 +45,10 @@ struct Varyings
 #endif
 
 	float4 color						: COLOR;
+#if defined(UNITY_INSTANCING_ENABLED)
+    float3 positionBB               : TEXCOORD8;        // position relative to bounding box centre
+    uint instanceID                 : TEXCOORD9;
+#endif
 };
 #endif
 

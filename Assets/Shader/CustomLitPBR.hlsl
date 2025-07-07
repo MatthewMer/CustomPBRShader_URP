@@ -13,13 +13,13 @@ void InitializeInputData(Varyings IN, half3 normalTS, out InputData inputData)
 
     inputData.positionWS = IN.positionWS;
 
-#ifdef _NORMALMAP
+#if defined(_NORMALMAP)
     half3 viewDirWS = half3(IN.normalWS.w, IN.tangentWS.w, IN.bitangentWS.w);
     // transform normal from tangentspace to world normal
     half3x3 TBN = half3x3(IN.tangentWS.xyz, IN.bitangentWS.xyz, IN.normalWS.xyz);
 	inputData.normalWS = TransformTangentToWorld(normalTS, TBN);
 #else
-    half3 viewDirWS = GetWorldSpaceViewDir(IN.positionWS);
+    half3 viewDirWS = IN.viewDirWS;
     inputData.normalWS = IN.normalWS.xyz;
 #endif
 
@@ -112,15 +112,40 @@ void InitializeSurfaceData(Varyings IN, out SurfaceData surfaceData)
 #endif
 }
 
-Varyings InitializeVaryings(Attributes IN)
+void InitializeVaryings(Attributes IN, out Varyings OUT)
 {
-    Varyings OUT = (Varyings) 0;
+    OUT = (Varyings) 0;
+    
+#if defined(UNITY_INSTANCING_ENABLED)
+    OUT.instanceID = IN.instanceID;
+#endif
 
+#if !defined(UNITY_INSTANCING_ENABLED)
     VertexPositionInputs positionInputs = GetVertexPositionInputs(IN.positionOS.xyz);
+#else
+    half4x4 transform = GetInstanceMatrix(IN.instanceID);
+    OUT.positionBB = mul(transform, half4(IN.positionOS.xyz, 1)).xyz;
+    
+    VertexPositionInputs positionInputs = (VertexPositionInputs)0;
+    positionInputs.positionWS = TransformObjectToWorld(OUT.positionBB);
+    positionInputs.positionCS = TransformObjectToHClip(OUT.positionBB);
+#endif
+
+#if !defined(UNITY_INSTANCING_ENABLED)
 #ifdef _NORMALMAP
 	VertexNormalInputs normalInputs = GetVertexNormalInputs(IN.normalOS.xyz, IN.tangentOS);
 #else
     VertexNormalInputs normalInputs = GetVertexNormalInputs(IN.normalOS.xyz);
+#endif
+#else
+    VertexNormalInputs normalInputs = (VertexNormalInputs)0;
+    half3x3 rotationScale = (float3x3)transform;
+    
+    normalInputs.normalWS = normalize(mul(rotationScale, IN.normalOS.xyz));
+#ifdef _NORMALMAP
+    normalInputs.tangentWS = normalize(mul(rotationScale, IN.tangentOS.xyz));
+    normalInputs.bitangentWS = normalize(cross(normalInputs.normalWS, normalInputs.tangentWS) * IN.tangentOS.w);
+#endif
 #endif
 
     OUT.positionCS = positionInputs.positionCS;
@@ -136,6 +161,7 @@ Varyings InitializeVaryings(Attributes IN)
 	OUT.bitangentWS = float4(normalInputs.bitangentWS, viewDirWS.z);
 #else
     OUT.normalWS = NormalizeNormalPerVertex(normalInputs.normalWS);
+    OUT.viewDirWS = viewDirWS;
 #endif
     
     OUTPUT_LIGHTMAP_UV(IN.lightmapUV, unity_LightmapST, OUT.lightmapUV);
@@ -153,16 +179,26 @@ Varyings InitializeVaryings(Attributes IN)
 
     OUT.uv = IN.uv;
     OUT.color = IN.color;
-
-    return OUT;
 }
 
-Varyings CustomLitPBR_Vert(Attributes IN)
+#if defined(UNITY_INSTANCING_ENABLED)
+Varyings CustomLitPBR_Vert(Attributes IN, uint instanceID : SV_InstanceID)
 {
-    Varyings OUT = InitializeVaryings(IN);
+    Varyings OUT;
+    IN.instanceID = instanceID;
+    InitializeVaryings(IN, OUT);
     Vert(IN, OUT);
     return OUT;
 }
+#else
+Varyings CustomLitPBR_Vert(Attributes IN)
+{
+    Varyings OUT;
+    InitializeVaryings(IN, OUT);
+    Vert(IN, OUT);
+    return OUT;
+}
+#endif
 
 float4 CustomLitPBR_Frag(Varyings IN) : SV_Target
 {
